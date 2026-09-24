@@ -185,3 +185,21 @@ jobs:
         shell: cmd
         run: |
           nmake /NOLOGO /f build-ci\Makefile
+            # --- ДОБАВЬТЕ ЭТО В КОНЕЦ ФАЙЛА ---
+      - name: Deploy Qt Dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Находим все скомпилированные .exe и подтягиваем к ним нужные DLL (Qt5Core, Qt5Gui и т.д.)
+          $exes = Get-ChildItem -Path build-ci -Recurse -Filter *.exe -ErrorAction SilentlyContinue
+          foreach ($exe in $exes) {
+              Write-Host "Running windeployqt on $($exe.FullName)"
+              & windeployqt --release --no-translations --no-system-d3d-compiler $exe.FullName
+          }
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiteIDE-${{ matrix.os }}-Qt${{ matrix.qt_version }}
+          path: build-ci/
+          retention-days: 14 # Хранить архив 14 дней
