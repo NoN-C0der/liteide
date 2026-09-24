@@ -3,11 +3,19 @@ name: Build
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+env:
+  # Если в процессе сборки будут вызываться go build / go install,
+  # Go будет таргетировать уровень инструкций x86-64-v2.
+  # Это аналог -march=x86-64-v2 для Go.
+  GOAMD64: v2
 
 jobs:
   build:
     name: Build (${{ matrix.os }}, Qt ${{ matrix.qt_version }})
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -16,22 +24,27 @@ jobs:
             qt_version: '5.15.2'
             qt_arch: gcc_64
             qt_modules: ''
+
           - os: macos-latest
             qt_version: '5.15.2'
             qt_arch: clang_64
             qt_modules: ''
+
           - os: windows-latest
             qt_version: '5.15.2'
             qt_arch: win64_msvc2019_64
             qt_modules: ''
+
           - os: ubuntu-latest
             qt_version: '6.8.3'
             qt_arch: linux_gcc_64
             qt_modules: qt5compat
+
           - os: macos-latest
             qt_version: '6.8.3'
             qt_arch: clang_64
             qt_modules: qt5compat
+
           - os: windows-latest
             qt_version: '6.8.3'
             qt_arch: win64_msvc2022_64
@@ -88,6 +101,7 @@ jobs:
           qt_prefix="$(qmake -query QT_INSTALL_PREFIX)"
           find "$qt_prefix" -type f \( -name '*.conf' -o -name '*.prf' -o -name '*.prl' \) \
             -exec perl -pi -e 's/-framework AGL//g' {} +
+
           if find "$qt_prefix" -type f \( -name '*.conf' -o -name '*.prf' -o -name '*.prl' \) \
               -exec grep -l -- '-framework AGL' {} + | grep -q .; then
             echo 'Failed to remove the obsolete AGL framework dependency.' >&2
@@ -110,7 +124,15 @@ jobs:
         run: |
           mkdir -p build-ci
           cd build-ci
-          qmake ../liteidex CONFIG+=release
+
+          march_flag=""
+          if [[ "$(uname -m)" == "x86_64" ]]; then
+            march_flag="-march=x86-64-v2"
+          fi
+
+          qmake ../liteidex CONFIG+=release \
+            "QMAKE_CXXFLAGS_RELEASE+=-O3 ${march_flag} -flto=thin -ffat-lto-objects" \
+            "QMAKE_LFLAGS_RELEASE+=-flto=thin"
 
       - name: Configure (macOS)
         if: runner.os == 'macOS'
@@ -118,10 +140,26 @@ jobs:
         run: |
           mkdir -p build-ci
           cd build-ci
-          qmake_args=(CONFIG+=release 'QMAKE_LIBS_OPENGL=-framework OpenGL')
+
+          qmake_args=(
+            CONFIG+=release
+            'QMAKE_LIBS_OPENGL=-framework OpenGL'
+          )
+
           if [[ '${{ matrix.qt_version }}' == 6.* ]]; then
             qmake_args+=('QMAKE_CXXFLAGS+=-include arm_acle.h')
           fi
+
+          march_flag=""
+          if [[ "$(uname -m)" == "x86_64" ]]; then
+            march_flag="-march=x86-64-v2"
+          fi
+
+          qmake_args+=(
+            "QMAKE_CXXFLAGS_RELEASE+=-O3 ${march_flag} -flto=thin"
+            "QMAKE_LFLAGS_RELEASE+=-flto=thin"
+          )
+
           qmake ../liteidex "${qmake_args[@]}"
 
       - name: Configure (Windows)
@@ -130,14 +168,20 @@ jobs:
         run: |
           if not exist build-ci mkdir build-ci
           cd build-ci
-          qmake ..\liteidex CONFIG+=release CONFIG-=precompile_header
+
+          qmake ..\liteidex CONFIG+=release CONFIG-=precompile_header ^
+            "QMAKE_CXXFLAGS_RELEASE+=/O2 /GL /Gy /Oi /Ot /Ob2 /favor:blend /arch:SSE4.2" ^
+            "QMAKE_LFLAGS_RELEASE+=/LTCG /OPT:REF /OPT:ICF"
 
       - name: Compile (Unix)
         if: runner.os != 'Windows'
         shell: bash
-        run: make -C build-ci -j2
+        run: |
+          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+          make -C build-ci -j"$JOBS"
 
       - name: Compile (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: nmake /f build-ci\Makefile
+        run: |
+          nmake /NOLOGO /f build-ci\Makefile
