@@ -201,3 +201,4 @@ jobs:
           path: |
             liteidex/liteide/bin/
             liteidex/liteide/lib/
+            liteidex/liteide/share/
