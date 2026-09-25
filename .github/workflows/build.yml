@@ -172,7 +172,9 @@ jobs:
         run: |
           mkdir deploy
           xcopy /E /I /Y liteidex\liteide deploy\liteide
-          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw deploy\liteide\bin\liteide.exe
+          for %%i in (deploy\liteide\bin\*.exe deploy\liteide\bin\*.dll) do (
+           windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw %%i
+           )
 
       - name: Upload Artifact (Windows)
         if: runner.os == 'Windows'
