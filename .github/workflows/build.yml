@@ -172,6 +172,16 @@ jobs:
           qmake ..\liteidex CONFIG+=release CONFIG-=precompile_header ^
             "QMAKE_CXXFLAGS_RELEASE+=/O2 /GL /Gy /Oi /Ot /Ob2 /favor:blend /arch:SSE4.2" ^
             "QMAKE_LFLAGS_RELEASE+=/LTCG /OPT:REF /OPT:ICF"
+      - name: Fix Makefile comments (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Исправляем баг qmake/nmake, когда комментарии # воспринимаются как команды
+          Get-ChildItem -Path build-ci -Recurse -Filter Makefile* | ForEach-Object {
+            $content = Get-Content $_.FullName
+            $newContent = $content | Where-Object { $_ -notmatch '^\t\s*#' }
+            $newContent | Set-Content $_.FullName -Encoding UTF8
+          }
 
       - name: Compile (Unix)
         if: runner.os != 'Windows'
